@@ -20,6 +20,13 @@ if [ ! -d "/tmpfs/oldroot" ]; then
   mkdir /tmpfs/oldroot
 fi
 
+if [ ! -d "/tmpfs/var/log" ]; then
+  mkdir -p /tmpfs/var/log
+fi
+
+if [ ! -d "/tmpfs/tmp" ]; then
+  mkdir -p /tmpfs/tmp
+fi
 
 echo "Copying /dev to tmpfs"
 cp -a /dev /tmpfs/
@@ -40,24 +47,40 @@ cp -a /root /tmpfs/
 echo "Copying /var to tmpfs"
 cp -a /var /tmpfs/
 
+cat /etc/resolv.conf
+cat /etc/hostname
 
-echo "Pivot_root"
-#umount /proc
-#chroot /tmpfs
+echo "running pivot_root"
 cd /tmpfs
 pivot_root . ./oldroot
 
-#umount /oldroot
-#rm -r /oldroot
+echo "Unmounting old root"
+umount -l /oldroot
 
-#mount none /proc -t proc
-#mount none /dev -t devfs
+if [ `mountpoint /oldroot/ > /dev/null; echo $?` -eq 1 ]; then
+  #Not a mountpoint anymore
+  echo "Removing /oldroot directory"
+  rm -r /oldroot
+fi
+
+echo "Cleaning /etc/resolv.conf"
+echo "" > /etc/resolv.conf
+
+echo "Cleaning /etc/hostname"
+#echo "" > /etc/hostname
+cat /etc/hostname
+
+# redirect to stderr because of "start: failed to connect to socket /com/ubuntu/upstart"
+# or should I use a custom init script?
+echo "Regenerating openssh keys"
+/usr/sbin/dpkg-reconfigure openssh-server 2> /dev/null
 
 echo "Clearing display"
-clear
+#clear
 
 # At this point /tmpfs/etc/fstab is very important!
 # https://help.ubuntu.com/community/DisklessUbuntuHowto (6. configure fstab)
 
-# Execute normal boot procedure
-exec /sbin/init
+echo "Starting normal boot process"
+#exec /sbin/init
+exec /sbin/init <dev/console >dev/console 2>&1

@@ -1,57 +1,55 @@
 #!/bin/sh
 # /linuxrc
 
-if [ ! -d "/tmpfs" ]; then
-  mkdir /tmpfs
+nfs_dirs='/bin /etc /lib/ /sbin/ /usr'
+dirs_to_copy='/home /mnt /root /run /var'
+dirs_to_create='/dev /proc /sys /oldroot /tmp'
+noderoot=/noderoot
+nfs_server=192.168.1.160
+nfs_basedir=/mnt/media/thinclient/base
+
+if [ ! -d "$noderoot" ]; then
+  echo "$noderoot does not exist. Create it on the base image"
+  exit 101
 fi
 
 echo "Mount tmpfs"
-mount -t tmpfs none /tmpfs
+mount -t tmpfs none $noderoot
 
-if [ ! -d "/tmpfs/proc" ]; then
-  mkdir /tmpfs/proc
-fi
+for dir in $dirs_to_create; do
+  echo "Checking if $noderoot$dir exists"
+    if [ ! -d "$noderoot$dir" ]; then
+      echo "Creating $noderoot$dir"
+      mkdir $noderoot$dir
+    fi
+done
 
-if [ ! -d "/tmpfs/sys" ]; then
-  mkdir /tmpfs/sys
-fi
+echo "Mounting new $noderoot/proc"
+mount -t proc none $noderoot/proc
 
-if [ ! -d "/tmpfs/oldroot" ]; then
-  mkdir /tmpfs/oldroot
-fi
+echo "Mounting new $noderoot/sys"
+mount -t sysfs none $noderoot/sys
 
-if [ ! -d "/tmpfs/var/log" ]; then
-  mkdir -p /tmpfs/var/log
-fi
+echo "Mounting new $noderoot/dev"
+mount -o bind /dev $noderoot/dev
 
-if [ ! -d "/tmpfs/tmp" ]; then
-  mkdir -p /tmpfs/tmp
-fi
+for dir in $dirs_to_copy; do
+  echo "Copying $dir to $noderoot"
+  cp -a $dir $noderoot
+done
 
-echo "Copying /dev to tmpfs"
-cp -a /dev /tmpfs/
-echo "Copying /bin to tmpfs"
-cp -a /bin /tmpfs/
-echo "Copying /sbin to tmpfs"
-cp -a /sbin /tmpfs/
-echo "Copying /etc to tmpfs"
-cp -a /etc /tmpfs/
-echo "Copying /usr to tmpfs"
-cp -a /usr /tmpfs/
-echo "Copying /home to tmpfs"
-cp -a /home /tmpfs/
-echo "Copying /lib to tmpfs"
-cp -a /lib /tmpfs/
-echo "Copying /root to tmpfs"
-cp -a /root /tmpfs/
-echo "Copying /var to tmpfs"
-cp -a /var /tmpfs/
+for dir in $nfs_dirs; do
+  if [ ! -d "$noderoot$dir" ]; then
+    echo "Creating $noderoot$dir"
+    mkdir $noderoot$dir
+  fi
 
-cat /etc/resolv.conf
-cat /etc/hostname
+  echo "Mounting nfs dir $dir"
+  mount -t nfs $nfs_server:$nfs_basedir$dir $noderoot$dir -o nolock,ro
+done
 
 echo "running pivot_root"
-cd /tmpfs
+cd $noderoot
 pivot_root . ./oldroot
 
 echo "Unmounting old root"
@@ -63,13 +61,6 @@ if [ `mountpoint /oldroot/ > /dev/null; echo $?` -eq 1 ]; then
   rm -r /oldroot
 fi
 
-echo "Cleaning /etc/resolv.conf"
-echo "" > /etc/resolv.conf
-
-echo "Cleaning /etc/hostname"
-#echo "" > /etc/hostname
-cat /etc/hostname
-
 # redirect to stderr because of "start: failed to connect to socket /com/ubuntu/upstart"
 # or should I use a custom init script?
 echo "Regenerating openssh keys"
@@ -78,9 +69,8 @@ echo "Regenerating openssh keys"
 echo "Clearing display"
 #clear
 
-# At this point /tmpfs/etc/fstab is very important!
+# At this point $noderoot/etc/fstab is very important!
 # https://help.ubuntu.com/community/DisklessUbuntuHowto (6. configure fstab)
 
 echo "Starting normal boot process"
-#exec /sbin/init
 exec /sbin/init <dev/console >dev/console 2>&1

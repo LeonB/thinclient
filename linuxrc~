@@ -1,0 +1,86 @@
+#!/bin/sh
+# /linuxrc
+
+if [ ! -d "/tmpfs" ]; then
+  mkdir /tmpfs
+fi
+
+echo "Mount tmpfs"
+mount -t tmpfs none /tmpfs
+
+if [ ! -d "/tmpfs/proc" ]; then
+  mkdir /tmpfs/proc
+fi
+
+if [ ! -d "/tmpfs/sys" ]; then
+  mkdir /tmpfs/sys
+fi
+
+if [ ! -d "/tmpfs/oldroot" ]; then
+  mkdir /tmpfs/oldroot
+fi
+
+if [ ! -d "/tmpfs/var/log" ]; then
+  mkdir -p /tmpfs/var/log
+fi
+
+if [ ! -d "/tmpfs/tmp" ]; then
+  mkdir -p /tmpfs/tmp
+fi
+
+echo "Copying /dev to tmpfs"
+cp -a /dev /tmpfs/
+echo "Copying /bin to tmpfs"
+cp -a /bin /tmpfs/
+echo "Copying /sbin to tmpfs"
+cp -a /sbin /tmpfs/
+echo "Copying /etc to tmpfs"
+cp -a /etc /tmpfs/
+echo "Copying /usr to tmpfs"
+cp -a /usr /tmpfs/
+echo "Copying /home to tmpfs"
+cp -a /home /tmpfs/
+echo "Copying /lib to tmpfs"
+cp -a /lib /tmpfs/
+echo "Copying /root to tmpfs"
+cp -a /root /tmpfs/
+echo "Copying /var to tmpfs"
+cp -a /var /tmpfs/
+
+cat /etc/resolv.conf
+cat /etc/hostname
+
+echo "running pivot_root"
+cd /tmpfs
+pivot_root . ./oldroot
+
+echo "Unmounting old root"
+umount -l /oldroot
+
+if [ `mountpoint /oldroot/ > /dev/null; echo $?` -eq 1 ]; then
+  #Not a mountpoint anymore
+  echo "Removing /oldroot directory"
+  rm -r /oldroot
+fi
+
+echo "Cleaning /etc/resolv.conf"
+echo "" > /etc/resolv.conf
+
+echo "Cleaning /etc/hostname"
+#echo "" > /etc/hostname
+cat /etc/hostname
+
+# redirect to stderr because of "start: failed to connect to socket /com/ubuntu/upstart"
+# or should I use a custom init script?
+echo "Regenerating openssh keys"
+/usr/sbin/dpkg-reconfigure openssh-server 2> /dev/null
+
+echo "Clearing display"
+#clear
+
+# At this point /tmpfs/etc/fstab is very important!
+# https://help.ubuntu.com/community/DisklessUbuntuHowto (6. configure fstab)
+
+echo "Starting normal boot process"
+#exec /sbin/init
+exec /sbin/init <dev/console >dev/console 2>&1

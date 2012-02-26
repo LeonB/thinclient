@@ -1,9 +1,9 @@
 #!/bin/sh
 # /linuxrc
 
-nfs_dirs='/bin /etc /lib/ /sbin/ /usr'
-dirs_to_copy='/home /mnt /root /run /var'
-dirs_to_create='/dev /proc /sys /oldroot /tmp'
+dirs_to_create='/dev /mnt /proc /sys /oldroot /tmp'
+nfs_dirs='/etc'
+dirs_to_copy='/bin /etc/ssh /home /lib /root /run /sbin /usr /var'
 noderoot=/noderoot
 nfs_server=192.168.1.160
 nfs_basedir=/mnt/media/thinclient/base
@@ -13,15 +13,113 @@ if [ ! -d "$noderoot" ]; then
   exit 101
 fi
 
-echo "Mount tmpfs"
-mount -t tmpfs none $noderoot
+if [ "$noderoot" != "/" ]; then
+  echo "Mount tmpfs"
+  mount -t tmpfs none $noderoot
+fi
+
+if [ "$nfs_dirs" != "" ]; then
+  echo "Creating loopback device for rpcbind & rpc.statd"
+  ifconfig lo alias
+
+  echo "Creating mount for /var/run"
+  mount -t tmpfs none /var/run/
+
+  echo "Creating /var/run/rpcbind"
+  mkdir /var/run/rpcbind
+
+  touch /var/run/rpcbind/rpcbind.xdr
+  touch /var/run/rpcbind/portmap.xdr
+
+  echo "Starting rpcbind"
+  rpcbind -w
+
+  echo "Starting statd"
+  rpc.statd -L
+fi
 
 for dir in $dirs_to_create; do
   echo "Checking if $noderoot$dir exists"
     if [ ! -d "$noderoot$dir" ]; then
       echo "Creating $noderoot$dir"
-      mkdir $noderoot$dir
+      mkdir -p $noderoot$dir
     fi
+done
+  
+for dir in $nfs_dirs; do
+  if [ ! -d "$noderoot$dir" ]; then
+                                                                                   [ Wrote 111 lines ]
+
+[root@freenas /mnt/media/thinclient/base]# cat linuxrc 
+#!/bin/sh
+# /linuxrc
+
+dirs_to_create='/dev /mnt /proc /sys /oldroot /tmp'
+nfs_dirs='/etc'
+dirs_to_copy='/bin /etc/ssh /home /lib /root /run /sbin /usr /var'
+noderoot=/noderoot
+nfs_server=192.168.1.160
+nfs_basedir=/mnt/media/thinclient/base
+
+if [ ! -d "$noderoot" ]; then
+  echo "$noderoot does not exist. Create it on the base image"
+  exit 101
+fi
+
+if [ "$noderoot" != "/" ]; then
+  echo "Mount tmpfs"
+  mount -t tmpfs none $noderoot
+fi
+
+if [ "$nfs_dirs" != "" ]; then
+  echo "Creating loopback device for rpcbind & rpc.statd"
+  ifconfig lo alias
+
+  echo "Creating mount for /var/run"
+  mount -t tmpfs none /var/run/
+  
+  echo "Creating /var/run/rpcbind"
+  mkdir /var/run/rpcbind
+
+  touch /var/run/rpcbind/rpcbind.xdr
+  touch /var/run/rpcbind/portmap.xdr
+
+  echo "Starting rpcbind"
+  rpcbind -w
+
+  echo "Starting statd"
+  rpc.statd -L
+fi
+
+for dir in $dirs_to_create; do
+  echo "Checking if $noderoot$dir exists"
+    if [ ! -d "$noderoot$dir" ]; then
+      echo "Creating $noderoot$dir"
+      mkdir -p $noderoot$dir
+    fi
+done
+
+for dir in $nfs_dirs; do
+  if [ ! -d "$noderoot$dir" ]; then
+    echo "Creating $noderoot$dir"
+    mkdir $noderoot$dir
+  fi
+
+  echo "Mounting nfs dir $dir on $noderoot$dir"
+  mount -t nfs $nfs_server:$nfs_basedir$dir $noderoot$dir -o ro
+done
+
+for dir in $dirs_to_copy; do
+    if [ ! -d "$noderoot$dir" ]; then
+      echo "Creating $noderoot$dir"
+      mkdir -p $noderoot$dir
+    fi
+
+  echo "Creating tmpfs mountdir $noderoot$dir"
+  mount -t tmpfs none $noderoot$dir
+
+  echo "Copying $dir to $noderoot"
+  cp --archive --parents $dir $noderoot
 done
 
 echo "Mounting new $noderoot/proc"
@@ -32,21 +130,6 @@ mount -t sysfs none $noderoot/sys
 
 echo "Mounting new $noderoot/dev"
 mount -o bind /dev $noderoot/dev
-
-for dir in $dirs_to_copy; do
-  echo "Copying $dir to $noderoot"
-  cp -a $dir $noderoot
-done
-
-for dir in $nfs_dirs; do
-  if [ ! -d "$noderoot$dir" ]; then
-    echo "Creating $noderoot$dir"
-    mkdir $noderoot$dir
-  fi
-
-  echo "Mounting nfs dir $dir"
-  mount -t nfs $nfs_server:$nfs_basedir$dir $noderoot$dir -o nolock,ro
-done
 
 echo "running pivot_root"
 cd $noderoot
@@ -59,6 +142,11 @@ if [ `mountpoint /oldroot/ > /dev/null; echo $?` -eq 1 ]; then
   #Not a mountpoint anymore
   echo "Removing /oldroot directory"
   rm -r /oldroot
+fi
+
+if [ "$nfs_dirs" != "" ]; then
+  echo "Removing loopback interface"
+  ifconfig lo down
 fi
 
 # redirect to stderr because of "start: failed to connect to socket /com/ubuntu/upstart"
